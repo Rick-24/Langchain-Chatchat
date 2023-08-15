@@ -153,7 +153,7 @@ PROMPT_TEMPLATE = """【指令】根据已知信息，简洁和专业的来回�
 
 # API 是否开启跨域，默认为False，如果需要开启，请设置为True
 # is open cross domain
-OPEN_CROSS_DOMAIN = False
+OPEN_CROSS_DOMAIN = True
 
 # Bing 搜索必备变量
 # 使用 Bing 搜索需要使用 Bing Subscription Key,需要在azure port中申请试用bing search
