@@ -13,7 +13,7 @@ from server.db.repository.knowledge_file_repository import (
     list_docs_from_db, get_file_detail, delete_file_from_db
 )
 
-from configs.model_config import (kbs_config, VECTOR_SEARCH_TOP_K,
+from configs.model_config import (kbs_config, VECTOR_SEARCH_TOP_K, SCORE_THRESHOLD,
                                   EMBEDDING_DEVICE, EMBEDDING_MODEL)
 from server.knowledge_base.utils import (
     get_kb_path, get_doc_path, load_embeddings, KnowledgeFile,
@@ -71,36 +71,37 @@ class KBService(ABC):
         status = delete_kb_from_db(self.kb_name)
         return status
 
-    def add_doc(self, kb_file: KnowledgeFile):
+    def add_doc(self, kb_file: KnowledgeFile, **kwargs):
         """
         向知识库添加文件
         """
         docs = kb_file.file2text()
         if docs:
+            self.delete_doc(kb_file)
             embeddings = self._load_embeddings()
-            self.do_add_doc(docs, embeddings)
+            self.do_add_doc(docs, embeddings, **kwargs)
             status = add_doc_to_db(kb_file)
         else:
             status = False
         return status
 
-    def delete_doc(self, kb_file: KnowledgeFile, delete_content: bool = False):
+    def delete_doc(self, kb_file: KnowledgeFile, delete_content: bool = False, **kwargs):
         """
         从知识库删除文件
         """
-        self.do_delete_doc(kb_file)
+        self.do_delete_doc(kb_file, **kwargs)
         status = delete_file_from_db(kb_file)
         if delete_content and os.path.exists(kb_file.filepath):
             os.remove(kb_file.filepath)
         return status
 
-    def update_doc(self, kb_file: KnowledgeFile):
+    def update_doc(self, kb_file: KnowledgeFile, **kwargs):
         """
         使用content中的文件更新向量库
         """
         if os.path.exists(kb_file.filepath):
-            self.delete_doc(kb_file)
-            return self.add_doc(kb_file)
+            self.delete_doc(kb_file, **kwargs)
+            return self.add_doc(kb_file, **kwargs)
         
     def exist_doc(self, file_name: str):
         return doc_exists(KnowledgeFile(knowledge_base_name=self.kb_name,
@@ -112,9 +113,10 @@ class KBService(ABC):
     def search_docs(self,
                     query: str,
                     top_k: int = VECTOR_SEARCH_TOP_K,
+                    score_threshold: float = SCORE_THRESHOLD,
                     ):
         embeddings = self._load_embeddings()
-        docs = self.do_search(query, top_k, embeddings)
+        docs = self.do_search(query, top_k, score_threshold, embeddings)
         return docs
 
     @abstractmethod
