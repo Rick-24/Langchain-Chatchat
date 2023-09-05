@@ -13,7 +13,7 @@ from starlette.responses import RedirectResponse
 from server.chat import (chat, knowledge_base_chat, openai_chat,
                          search_engine_chat)
 from server.knowledge_base.kb_api import list_kbs, create_kb, delete_kb
-from server.knowledge_base.kb_doc_api import (list_docs, upload_doc, delete_doc,
+from server.knowledge_base.kb_doc_api import (list_docs, upload_doc, upload_text, delete_doc,
                                               update_doc, download_doc, recreate_vector_store)
 from server.utils import BaseResponse, ListResponse
 
@@ -88,6 +88,12 @@ def create_app():
              response_model=BaseResponse,
              summary="上传文件到知识库"
              )(upload_doc)
+
+    app.post("/knowledge_base/upload_text",
+             tags=["Knowledge Base Management"],
+             response_model=BaseResponse,
+             summary="上传文件到知识库"
+             )(upload_text)
 
     app.post("/knowledge_base/delete_doc",
                tags=["Knowledge Base Management"],

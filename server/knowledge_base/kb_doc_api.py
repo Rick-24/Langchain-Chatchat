@@ -1,5 +1,6 @@
 import os
 import urllib
+import io
 from fastapi import File, Form, Body, Query, UploadFile
 from configs.model_config import DEFAULT_VS_TYPE, EMBEDDING_MODEL
 from server.utils import BaseResponse, ListResponse
@@ -11,7 +12,7 @@ from typing import List
 
 
 async def list_docs(
-    knowledge_base_name: str
+        knowledge_base_name: str
 ):
     if not validate_kb_name(knowledge_base_name):
         return ListResponse(code=403, msg="Don't attack me", data=[])
@@ -59,10 +60,21 @@ async def upload_doc(file: UploadFile = File(..., description="上传文件"),
     return BaseResponse(code=200, msg=f"成功上传文件 {kb_file.filename}")
 
 
+async def upload_text(knowledge_base_name: str = Body(..., examples=["samples"]),
+                      doc_name: str = Body(..., examples=["file_name.txt"]),
+                      question: str = Body(..., examples=["question"]),
+                      answer: str = Body(..., examples=["answer"]),
+                      ):
+    text_str = "question: " + question + "\n" + "answer: " + answer
+    # 将textStr转为UploadFile
+    file = UploadFile(filename=doc_name, file=io.BytesIO(text_str.encode()))
+    return await upload_doc(file, knowledge_base_name, True)
+
+
 async def delete_doc(knowledge_base_name: str = Body(..., examples=["samples"]),
                      doc_name: str = Body(..., examples=["file_name.md"]),
                      delete_content: bool = Body(False),
-                    ):
+                     ):
     if not validate_kb_name(knowledge_base_name):
         return BaseResponse(code=403, msg="Don't attack me")
 
@@ -83,7 +95,7 @@ async def delete_doc(knowledge_base_name: str = Body(..., examples=["samples"]),
 async def update_doc(
         knowledge_base_name: str = Body(..., examples=["samples"]),
         file_name: str = Body(..., examples=["file_name"]),
-    ):
+):
     '''
     更新知识库文档
     '''
@@ -107,7 +119,7 @@ async def update_doc(
 async def download_doc(
         knowledge_base_name: str = Query(..., examples=["samples"]),
         file_name: str = Query(..., examples=["test.txt"]),
-    ):
+):
     '''
     下载知识库文档
     '''
@@ -130,14 +142,12 @@ async def download_doc(
         return BaseResponse(code=500, msg=f"{kb_file.filename} 读取文件失败")
 
 
-
-
 async def recreate_vector_store(
         knowledge_base_name: str = Body(..., examples=["samples"]),
         allow_empty_kb: bool = Body(True),
         vs_type: str = Body(DEFAULT_VS_TYPE),
         embed_model: str = Body(EMBEDDING_MODEL),
-    ):
+):
     '''
     recreate vector store from the content.
     this is usefull when user can copy files to content folder directly instead of upload through network.
