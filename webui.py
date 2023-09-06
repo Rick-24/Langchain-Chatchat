@@ -11,7 +11,7 @@ from webui_pages import *
 import os
 from configs import VERSION
 
-api = ApiRequest(base_url="http://127.0.0.1:7861", no_remote_api=False)
+api = ApiRequest(base_url="http://210.30.97.70:7861", no_remote_api=True)
 
 if __name__ == "__main__":
     st.set_page_config(

@@ -1,4 +1,4 @@
-from fastapi import Body, Request
+from fastapi import Body, Request, WebSocket
 from fastapi.responses import StreamingResponse
 from configs.model_config import (llm_model_dict, LLM_MODEL, PROMPT_TEMPLATE,
                                   VECTOR_SEARCH_TOP_K, SCORE_THRESHOLD)
@@ -97,3 +97,57 @@ def knowledge_base_chat(query: str = Body(..., description="用户输入", examp
 
     return StreamingResponse(knowledge_base_chat_iterator(query, kb, top_k, history),
                              media_type="text/event-stream")
+
+
+async def stream_chat(websocket: WebSocket):
+    await websocket.accept()
+    turn = 1
+    while True:
+        input_json = await websocket.receive_json()
+        query, knowledge_base_name, history = input_json["query"], input_json["knowledge_base_name"], input_json[
+            "history"]
+        kb = KBServiceFactory.get_service_by_name(knowledge_base_name)
+        if kb is None:
+            await websocket.send_json(BaseResponse(code=404, msg=f"未找到知识库 {knowledge_base_name}").dict())
+            await websocket.close()
+            return
+        history = [History(**h) if isinstance(h, dict) else h for h in history]
+
+        await websocket.send_json({"query": query, "turn": turn, "flag": "start"})
+        callback = AsyncIteratorCallbackHandler()
+        model = ChatOpenAI(
+            streaming=True,
+            verbose=True,
+            callbacks=[callback],
+            openai_api_key=llm_model_dict[LLM_MODEL]["api_key"],
+            openai_api_base=llm_model_dict[LLM_MODEL]["api_base_url"],
+            model_name=LLM_MODEL
+        )
+        docs = search_docs(query, knowledge_base_name, VECTOR_SEARCH_TOP_K, SCORE_THRESHOLD)
+        if len(docs) == 0:
+            await websocket.send_text("")
+            await websocket.send_json({"query": query, "turn": turn, "flag": "none"})
+            continue
+        context = "\n".join([doc.page_content for doc in docs])
+        chat_prompt = ChatPromptTemplate.from_messages(
+            [i.to_msg_tuple() for i in history] + [("human", PROMPT_TEMPLATE)])
+
+        chain = LLMChain(prompt=chat_prompt, llm=model)
+        task = asyncio.create_task(wrap_done(
+            chain.acall({"context": context, "question": query}),
+            callback.done),
+        )
+
+        source_documents = []
+        for inum, doc in enumerate(docs):
+            filename = os.path.split(doc.metadata["source"])[-1]
+            parameters = urlencode({"knowledge_base_name": knowledge_base_name, "file_name": filename})
+            # todo 查看url是否一致
+            url = f"{websocket.url}knowledge_base/download_doc?" + parameters
+            text = f"""出处 [{inum + 1}] [{filename}]({url}) \n\n{doc.page_content}\n\n"""
+            source_documents.append(text)
+        async for token in callback.aiter():
+            await websocket.send_text(token)
+        await websocket.send_text("")
+        await websocket.send_json(
+            json.dumps({"query": query, "turn": turn, "flag": "end", "docs": source_documents}, ensure_ascii=False))
