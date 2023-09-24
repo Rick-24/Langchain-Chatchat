@@ -1,7 +1,7 @@
 from fastapi import Body, Request, WebSocket
 from fastapi.responses import StreamingResponse
 from configs.model_config import (llm_model_dict, LLM_MODEL, PROMPT_TEMPLATE,
-                                  VECTOR_SEARCH_TOP_K, SCORE_THRESHOLD)
+                                  VECTOR_SEARCH_TOP_K, SCORE_THRESHOLD,logger)
 from server.chat.utils import wrap_done
 from server.utils import BaseResponse
 from langchain.chat_models import ChatOpenAI
@@ -131,7 +131,6 @@ async def stream_chat(websocket: WebSocket):
         context = "\n".join([doc.page_content for doc in docs])
         chat_prompt = ChatPromptTemplate.from_messages(
             [i.to_msg_tuple() for i in history] + [("human", PROMPT_TEMPLATE)])
-
         chain = LLMChain(prompt=chat_prompt, llm=model)
         task = asyncio.create_task(wrap_done(
             chain.acall({"context": context, "question": query}),
