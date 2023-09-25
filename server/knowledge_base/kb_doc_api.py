@@ -91,7 +91,7 @@ async def upload_text(knowledge_base_name: str = Body(..., examples=["samples"])
                       question: str = Body(..., examples=["question"]),
                       answer: str = Body(..., examples=["answer"]),
                       ):
-    text_str = "问题：\"" + question + "\"" + "对应的答案为：\" " + answer + "\""
+    text_str = "question: " + question + " " + "answer: " + answer
     # 将textStr转为UploadFile
     file = UploadFile(filename=doc_name, file=io.BytesIO(text_str.encode()))
     return await upload_doc(file, knowledge_base_name, True)

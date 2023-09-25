@@ -146,7 +146,7 @@ NLTK_DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "nltk_
 
 # 基于本地知识问答的提示词模版
 PROMPT_TEMPLATE = """【指令】根据已知信息，简洁和专业的来回答问题。如果无法从中得到答案，请说 “根据已知信息无法回答该问题”，不允许在答案中添加编造成分，答案请使用中文。 
-
+如果已知信息中出现“question:问题 answer：XXX“的格式，直接返回相对应的答案即可。
 【已知信息】{context} 
 
 【问题】{question}"""
