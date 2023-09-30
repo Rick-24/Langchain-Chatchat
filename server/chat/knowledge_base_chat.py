@@ -1,7 +1,7 @@
 from fastapi import Body, Request, WebSocket
 from fastapi.responses import StreamingResponse
 from configs.model_config import (llm_model_dict, LLM_MODEL, PROMPT_TEMPLATE,
-                                  VECTOR_SEARCH_TOP_K, SCORE_THRESHOLD,logger)
+                                  VECTOR_SEARCH_TOP_K, SCORE_THRESHOLD, logger)
 from server.chat.utils import wrap_done
 from server.utils import BaseResponse
 from langchain.chat_models import ChatOpenAI
@@ -21,7 +21,9 @@ from server.knowledge_base.kb_doc_api import search_docs
 def knowledge_base_chat(query: str = Body(..., description="用户输入", examples=["你好"]),
                         knowledge_base_name: str = Body(..., description="知识库名称", examples=["samples"]),
                         top_k: int = Body(VECTOR_SEARCH_TOP_K, description="匹配向量数"),
-                        score_threshold: float = Body(SCORE_THRESHOLD, description="知识库匹配相关度阈值，取值范围在0-1之间，SCORE越小，相关度越高，取到1相当于不筛选，建议设置在0.5左右", ge=0, le=1),
+                        score_threshold: float = Body(SCORE_THRESHOLD,
+                                                      description="知识库匹配相关度阈值，取值范围在0-1之间，SCORE越小，相关度越高，取到1相当于不筛选，建议设置在0.5左右",
+                                                      ge=0, le=1),
                         history: List[History] = Body([],
                                                       description="历史对话",
                                                       examples=[[
@@ -74,7 +76,7 @@ def knowledge_base_chat(query: str = Body(..., description="用户输入", examp
             if local_doc_url:
                 url = "file://" + doc.metadata["source"]
             else:
-                parameters = urlencode({"knowledge_base_name": knowledge_base_name, "file_name":filename})
+                parameters = urlencode({"knowledge_base_name": knowledge_base_name, "file_name": filename})
                 url = f"{request.base_url}knowledge_base/download_doc?" + parameters
             text = f"""出处 [{inum + 1}] [{filename}]({url}) \n\n{doc.page_content}\n\n"""
             source_documents.append(text)
@@ -128,14 +130,6 @@ async def stream_chat(websocket: WebSocket):
             await websocket.send_text("")
             await websocket.send_json({"query": query, "turn": turn, "flag": "none"})
             continue
-        context = "\n".join([doc.page_content for doc in docs])
-        chat_prompt = ChatPromptTemplate.from_messages(
-            [i.to_msg_tuple() for i in history] + [("human", PROMPT_TEMPLATE)])
-        chain = LLMChain(prompt=chat_prompt, llm=model)
-        task = asyncio.create_task(wrap_done(
-            chain.acall({"context": context, "question": query}),
-            callback.done),
-        )
 
         source_documents = []
         for inum, doc in enumerate(docs):
@@ -145,6 +139,22 @@ async def stream_chat(websocket: WebSocket):
             url = f"{websocket.url}knowledge_base/download_doc?" + parameters
             text = f"""出处 [{inum + 1}] [{filename}]({url}) \n\n{doc.page_content}\n\n"""
             source_documents.append(text)
+
+        first_answer = docs[0].page_content
+        if first_answer.find('question:') > -1 and first_answer.find('answer:') > -1:
+            await websocket.send_text(first_answer[first_answer.find('answer:') + 7:])
+            await websocket.send_text("")
+            await websocket.send_json(
+                json.dumps({"query": query, "turn": turn, "flag": "qa", "docs": source_documents}, ensure_ascii=False))
+            continue
+        context = "\n".join([doc.page_content for doc in docs])
+        chat_prompt = ChatPromptTemplate.from_messages(
+            [i.to_msg_tuple() for i in history] + [("human", PROMPT_TEMPLATE)])
+        chain = LLMChain(prompt=chat_prompt, llm=model)
+        task = asyncio.create_task(wrap_done(
+            chain.acall({"context": context, "question": query}),
+            callback.done),
+        )
         async for token in callback.aiter():
             await websocket.send_text(token)
         await websocket.send_text("")
