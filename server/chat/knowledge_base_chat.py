@@ -1,3 +1,6 @@
+import re
+import time
+
 from fastapi import Body, Request, WebSocket
 from fastapi.responses import StreamingResponse
 from configs.model_config import (llm_model_dict, LLM_MODEL, PROMPT_TEMPLATE,
@@ -142,7 +145,11 @@ async def stream_chat(websocket: WebSocket):
 
         first_answer = docs[0].page_content
         if first_answer.find('question:') > -1 and first_answer.find('answer:') > -1:
-            await websocket.send_text(first_answer[first_answer.find('answer:') + 7:])
+            strs = first_answer[first_answer.find('answer:')+7:]
+            for i in range(0, len(strs), 3):
+                print(strs[i:i + 3])
+                await websocket.send_text("".join(strs[i:i + 3]))
+                time.sleep(0.2)
             await websocket.send_text("")
             await websocket.send_json(
                 json.dumps({"query": query, "turn": turn, "flag": "qa", "docs": source_documents}, ensure_ascii=False))
