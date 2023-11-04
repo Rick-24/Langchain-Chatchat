@@ -47,7 +47,7 @@ async def list_docs(
 
 async def upload_doc(file: UploadFile = File(..., description="上传文件"),
                      knowledge_base_name: str = Form(..., description="知识库名称", examples=["kb1"]),
-                     override: bool = Form(False, description="覆盖已有文件"),
+                     override: bool = Form(True, description="覆盖已有文件"),
                      not_refresh_vs_cache: bool = Form(False, description="暂不保存向量库（用于FAISS）"),
                      ) -> BaseResponse:
     if not validate_kb_name(knowledge_base_name):
