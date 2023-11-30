@@ -8,7 +8,7 @@ import sys
 from configs import VERSION
 from server.utils import api_address
 
-api = ApiRequest(base_url="http://210.30.97.70:7861", no_remote_api=True)
+api = ApiRequest(base_url="http://210.30.97.70:7861")
 
 
 if __name__ == "__main__":
