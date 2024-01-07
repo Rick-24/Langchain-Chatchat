@@ -3,6 +3,7 @@ import sys
 import os
 
 from server.chat.knowledge_base_chat import stream_chat
+from server.kg_answer.knowledge_graph_answer import kg_answer
 from server.knowledge_base.kb_doc_api import upload_text
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -152,7 +153,7 @@ def mount_knowledge_routes(app: FastAPI):
                                                 search_docs, DocumentWithScore, update_info)
 
     app.websocket("/local_doc_qa/stream_chat/{knowledge_base_id}")(stream_chat)
-
+    app.websocket("/local_kg_qa/stream_chat/{knowledge_base_id}")(kg_answer)
     app.post("/chat/knowledge_base_chat",
              tags=["Chat"],
              summary="与知识库对话")(knowledge_base_chat)

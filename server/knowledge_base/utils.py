@@ -14,7 +14,7 @@ import importlib
 from text_splitter import zh_title_enhance as func_zh_title_enhance
 import langchain.document_loaders
 from langchain.docstore.document import Document
-from langchain.text_splitter import TextSplitter
+from langchain.text_splitter import TextSplitter, CharacterTextSplitter
 from pathlib import Path
 import json
 from server.utils import run_in_thread_pool, get_model_worker_config
@@ -358,6 +358,7 @@ def files2docs_in_thread(
         chunk_size: int = CHUNK_SIZE,
         chunk_overlap: int = OVERLAP_SIZE,
         zh_title_enhance: bool = ZH_TITLE_ENHANCE,
+        text_splitter: TextSplitter = None,
 ) -> Generator:
     '''
     利用多线程批量将磁盘文件转化成langchain Document.
@@ -391,6 +392,7 @@ def files2docs_in_thread(
             kwargs["chunk_size"] = chunk_size
             kwargs["chunk_overlap"] = chunk_overlap
             kwargs["zh_title_enhance"] = zh_title_enhance
+            kwargs["text_splitter"] = text_splitter
             kwargs_list.append(kwargs)
         except Exception as e:
             yield False, (kb_name, filename, str(e))

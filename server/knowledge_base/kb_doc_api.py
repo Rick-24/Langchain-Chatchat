@@ -2,6 +2,8 @@ import os
 import urllib
 import io
 from fastapi import File, Form, Body, Query, UploadFile
+from langchain.text_splitter import CharacterTextSplitter
+
 from configs import (DEFAULT_VS_TYPE, EMBEDDING_MODEL,
                      VECTOR_SEARCH_TOP_K, SCORE_THRESHOLD,
                      CHUNK_SIZE, OVERLAP_SIZE, ZH_TITLE_ENHANCE,
@@ -276,13 +278,17 @@ def update_docs(
                 logger.error(f'{e.__class__.__name__}: {msg}',
                              exc_info=e if log_verbose else None)
                 failed_files[file_name] = msg
+    text_splitter = None
+    if knowledge_base_name == "entity":
+        text_splitter = CharacterTextSplitter(separator='\n\n', chunk_size=5, chunk_overlap=0)
 
     # 从文件生成docs，并进行向量化。
     # 这里利用了KnowledgeFile的缓存功能，在多线程中加载Document，然后传给KnowledgeFile
     for status, result in files2docs_in_thread(kb_files,
                                                chunk_size=chunk_size,
                                                chunk_overlap=chunk_overlap,
-                                               zh_title_enhance=zh_title_enhance):
+                                               zh_title_enhance=zh_title_enhance,
+                                               text_splitter=text_splitter):
         if status:
             kb_name, file_name, new_docs = result
             kb_file = KnowledgeFile(filename=file_name,
