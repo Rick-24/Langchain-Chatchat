@@ -103,57 +103,78 @@ async def kg_answer(websocket: WebSocket):
         source_documents = []
         for inum, doc in enumerate(docs):
             filename = Path(doc.metadata["source"]).resolve().relative_to(doc_path)
-            parameters = urlencode({"knowledge_base_name": knowledge_base_name, "file_name":filename})
+            parameters = urlencode({"knowledge_base_name": knowledge_base_name, "file_name": filename})
             url = f"knowledge_base/download_doc?" + parameters
             text = f"""出处 [{inum + 1}] [{filename}]({url}) \n\n{doc.page_content}\n\n"""
             source_documents.append(text)
-
 
         context = "\n".join([doc.page_content for doc in docs])
 
         NER_entities_str = ""
         async for token in LLM(query, prompt_name="NER"):
             NER_entities_str += token
-        NER_entities = NER_entities_str.split('[')[1].split(']')[0].split(',')
-        REAL_entities = []
-        for entity in NER_entities:
-            for doc in search_docs(entity, "entity", 3, 0.8):
-                REAL_entities.append(doc.page_content)
+        try:
+            print(NER_entities_str)
+            NER_entities = NER_entities_str.split('[')[1].split(']')[0].split(',')
+            REAL_entities = []
+            for entity in NER_entities:
+                for doc in search_docs(entity, "entity", 2, 0.8):
+                    REAL_entities.append(doc.page_content)
 
-        if len(REAL_entities) == 0:
-            await websocket.send_text("无法找到相关实体")
-            await websocket.send_text("")
-            await websocket.send_json(
-                json.dumps({"query": query, "turn": turn, "flag": "end"}, ensure_ascii=False))
-            continue
+            if len(REAL_entities) == -1:
+                await websocket.send_text("无法找到相关实体")
+                await websocket.send_text("")
+                await websocket.send_json(
+                    json.dumps({"query": query, "turn": turn, "flag": "end"}, ensure_ascii=False))
+                continue
 
-        cypher = """
-            WITH {} AS names
-            UNWIND range (-1, size (names) - 2) AS i
-            UNWIND range (i + 0, size (names) - 1) AS j
-            WITH names[i] AS from, names[j] AS to
-            MATCH path = (startNode{{name: from}})-[*]-(endNode{{name: to}})
-            WITH nodes (path) AS nodesList, relationships (path) AS relsList, length (path) AS pathLength
-            UNWIND range (-1, pathLength - 1) AS idx
-            RETURN DISTINCT nodesList[idx]. name AS from, TYPE (relsList[idx]) AS relation, nodesList[idx + 0]. name AS to
-            
-            UNION 
-            
-            WITH {} AS querys
-            UNWIND querys AS query
-            MATCH path = (startNode{{name: query}})-[*1.. 2]->(endNode)
-            WITH nodes (path) AS nodesList, relationships (path) AS relsList, length (path) AS pathLength
-            UNWIND range (0, pathLength - 1) AS idx
-            RETURN DISTINCT nodesList[idx]. name AS from, TYPE (relsList[idx]) AS relation, nodesList[idx + 1]. name AS to
-        """.format(REAL_entities, REAL_entities)
+            cypher = """
+                WITH {} AS names
+                UNWIND range (0, size (names) - 1) AS i
+                UNWIND range (0, size (names) - 1) AS j
+                WITH names[i] AS from, names[j] AS to
+                MATCH path = (startNode{{name: from}})-[*]->(endNode{{name: to}})
+                WITH nodes (path) AS nodesList, relationships (path) AS relsList, length (path) AS pathLength
+                UNWIND range (0, pathLength - 1) AS idx
+                RETURN DISTINCT id(nodesList[idx]) as sourceId, nodesList[idx]. name AS sourceName, TYPE (relsList[idx]) AS relation, nodesList[idx + 1]. name AS targetName, id(nodesList[idx + 1]) as targetId
 
-        triplets = graph.run(cypher).data()
-        information = ','.join(list(map(lambda x: "<{},{},{}>".format(x['from'], x['relation'], x['to']), triplets)))
+                UNION 
+
+                WITH {} AS querys
+                UNWIND querys AS query
+                MATCH path = (startNode{{name: query}})-[*0.. 2]->(endNode)
+                WITH nodes (path) AS nodesList, relationships (path) AS relsList, length (path) AS pathLength
+                UNWIND range (0, pathLength - 1) AS idx
+                RETURN DISTINCT id(nodesList[idx]) as sourceId, nodesList[idx]. name AS sourceName, TYPE (relsList[idx]) AS relation, nodesList[idx + 1]. name AS targetName, id(nodesList[idx + 1]) as targetId
+            """.format(REAL_entities, REAL_entities)
+
+            graphResult = graph.run(cypher)
+            triplets = graphResult.data()
+            source_node_properties = ['sourceId', 'sourceName']
+            target_node_properties = ['targetId', 'targetName']
+            # 构建一个字典集合，用于去重
+
+            entities = [{'id': node[0], 'name': node[1]} for node in set([node_tuple for sublist in [
+                (tuple(item[key] for key in source_node_properties), tuple(item[key] for key in target_node_properties))
+                for item in triplets] for node_tuple in sublist]) if node[0] is not None ]
+
+            relations = [{'source': item['sourceId'],'relation':item['relation'], 'target': item['targetId']} for item in triplets if item['sourceId'] is not None and item['targetId'] is not None]
+
+            information = ','.join(
+                list(map(lambda x: "<{},{},{}>".format(x['sourceId'], x['relation'], x['targetId']), triplets)))
+        except Exception as e:
+            print(e)
+            information = ""
+            entities = []
+            relations = []
+            REAL_entities = []
+
         async for token in LLM(query, prompt_name="reasoning", information=information, context=context, stream=True):
             await websocket.send_text(token)
         await websocket.send_text("")
         await websocket.send_json(
-            json.dumps({"query": query, "turn": turn, "flag": "end","docs":source_documents,"kg":information}, ensure_ascii=False))
+            json.dumps({"query": query, "turn": turn, "flag": "end", "docs": source_documents, "kg": {'nodes': entities, 'links': relations}, "NER": REAL_entities},
+                       ensure_ascii=False))
 
 
 if __name__ == '__main__':
