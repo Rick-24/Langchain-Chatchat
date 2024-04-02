@@ -25,7 +25,7 @@ def knowledge_graph_answer(query_entities: List[str]):
     kb = KBServiceFactory.get_service_by_name("entity")
     for query in query_entities:
         real_entities = search_docs(query, "entity", 3, 0.5)
-        print(real_entities)
+        # print(real_entities)
 
 
 async def LLM(query: str,
@@ -61,7 +61,8 @@ async def LLM(query: str,
         )
     else:
         task = asyncio.create_task(wrap_done(
-            chain.acall({"question": query, "information": information, "context": context, "professor_context": professor_context}),
+            chain.acall({"question": query, "information": information, "context": context,
+                         "professor_context": professor_context}),
             callback.done),
         )
 
@@ -101,7 +102,7 @@ async def kg_information(query: str):
         NER_entities_str = ""
         async for token in LLM(query, prompt_name="NER"):
             NER_entities_str += token
-        print(NER_entities_str)
+        # print(NER_entities_str)
         NER_entities = NER_entities_str.split('[')[1].split(']')[0].split(',')
         REAL_entities = []
         for entity in NER_entities:
@@ -139,17 +140,18 @@ async def kg_information(query: str):
             (tuple(item[key] for key in source_node_properties), tuple(item[key] for key in target_node_properties))
             for item in triplets] for node_tuple in sublist]) if node[0] is not None]
 
-        kg['relations'] = [{'source': item['sourceId'], 'relation': item['relation'], 'target': item['targetId']} for item
-                        in
-                        triplets if item['sourceId'] is not None and item['targetId'] is not None]
+        kg['relations'] = [{'source': item['sourceId'], 'relation': item['relation'], 'target': item['targetId']} for
+                           item
+                           in
+                           triplets if item['sourceId'] is not None and item['targetId'] is not None]
 
         kg['information'] = ','.join(
             list(map(lambda x: "<{},{},{}>".format(x['sourceId'], x['relation'], x['targetId']), triplets)))
     except Exception as e:
-        print(e)
+        # print(e)
         kg['information'] = ""
         kg['entities'] = []
-        kg['relations']= []
+        kg['relations'] = []
         kg['REAL_entities'] = []
     return kg
 
@@ -162,6 +164,10 @@ async def kg_answer(websocket: WebSocket):
             input_json = await websocket.receive_json()
             query, history, knowledge_base_name = input_json["query"], input_json["history"], input_json[
                 "knowledge_base_name"]
+            if 'model_name' not in input_json:
+                model_name = LLM_MODELS[0]
+            else:
+                model_name = input_json['model_name']
             kb = KBServiceFactory.get_service_by_name(knowledge_base_name)
             if kb is None:
                 await websocket.send_json(BaseResponse(code=404, msg=f"未找到知识库 {knowledge_base_name}").dict())
@@ -188,15 +194,15 @@ async def kg_answer(websocket: WebSocket):
                 url = f"knowledge_base/download_doc?" + parameters
                 text = f"""出处 [{inum + 1}] [{filename}]({url}) \n\n{doc.page_content}\n\n"""
                 if doc.page_content.startswith('question:'):
-                    professor_knowledges.append(doc.page_content)
+                    professor_knowledges.append(doc.page_content.split('answer:')[1])
                 else:
                     context_knowledges.append(doc.page_content)
                 source_documents.append(text)
 
             context = "\n".join(context_knowledges)
             professor_context = "\n".join(professor_knowledges)
-            print(context)
-            print(professor_context)
+            # print(context)
+            # print(professor_context)
             kg = {}
             if len(professor_context) != 0:
                 kg['information'] = ""
@@ -207,7 +213,7 @@ async def kg_answer(websocket: WebSocket):
                 kg = await kg_information(query)
 
             prompt_name = get_prompt(context, professor_context, kg['information'])
-            async for token in LLM(query, prompt_name=prompt_name, professor_context=professor_context,
+            async for token in LLM(query, prompt_name=prompt_name, professor_context=professor_context, model_name= model_name,
                                    information=kg['information'], context=context, stream=True):
                 await websocket.send_text(token)
             await websocket.send_text("")
@@ -215,10 +221,8 @@ async def kg_answer(websocket: WebSocket):
                 json.dumps({"query": query, "turn": turn, "flag": "end", "docs": source_documents,
                             "kg": {'nodes': kg['entities'], 'links': kg['relations']}, "NER": kg['REAL_entities']},
                            ensure_ascii=False))
-    except KeyboardInterrupt or WebSocketDisconnect as e:
+    except Exception as e:
         await websocket.close()
-
-
 
 
 if __name__ == '__main__':
