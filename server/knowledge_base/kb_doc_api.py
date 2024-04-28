@@ -294,6 +294,7 @@ def update_docs(
             kb_file = KnowledgeFile(filename=file_name,
                                     knowledge_base_name=knowledge_base_name)
             kb_file.splited_docs = new_docs
+            print(new_docs)
             kb.update_doc(kb_file, not_refresh_vs_cache=True)
         else:
             kb_name, file_name, error = result

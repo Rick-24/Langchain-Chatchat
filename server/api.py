@@ -152,7 +152,7 @@ def mount_knowledge_routes(app: FastAPI):
                                                 update_docs, download_doc, recreate_vector_store,
                                                 search_docs, DocumentWithScore, update_info)
 
-    app.websocket("/local_doc_qa/stream_chat/{knowledge_base_id}")(stream_chat)
+    app.websocket("/local_qa/stream_chat/{knowledge_base_id}")(stream_chat)
     app.websocket("/local_kg_qa/stream_chat/{knowledge_base_id}")(kg_answer)
     app.post("/chat/knowledge_base_chat",
              tags=["Chat"],

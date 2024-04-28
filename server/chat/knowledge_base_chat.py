@@ -112,80 +112,58 @@ async def knowledge_base_chat(query: str = Body(..., description="用户输入",
 
 
 
+async def LLM(query: str,
+              history: List[History] = [],
+              model_name: str = LLM_MODELS[0],
+              prompt_name: str = "NER",
+              professor_context: str = "",
+              information: str = "",
+              context: str = "",
+              stream: bool = False,
+              ) -> AsyncIterable[str]:
+    callback = AsyncIteratorCallbackHandler()
+    temperature = TEMPERATURE
+    max_tokens = None
+    model = get_ChatOpenAI(
+        model_name=model_name,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        callbacks=[callback],
+    )
+
+    prompt_template = get_prompt_template("llm_chat", prompt_name)
+    input_msg = History(role="user", content=prompt_template).to_msg_template(False)
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [i.to_msg_template() for i in history] + [input_msg])
+    chain = LLMChain(prompt=chat_prompt, llm=model)
+
+    # Begin a task that runs in the background.
+    task = asyncio.create_task(wrap_done(
+        chain.acall({"input": query}),
+        callback.done),
+    )
+    answer = ""
+
+    async for token in callback.aiter():
+        yield token
+        answer += token
+
 
 async def stream_chat(websocket: WebSocket):
     await websocket.accept()
     turn = 1
     while True:
         input_json = await websocket.receive_json()
-        query, knowledge_base_name, history = input_json["query"], input_json["knowledge_base_name"], input_json[
-            "history"]
-        kb = KBServiceFactory.get_service_by_name(knowledge_base_name)
-        if kb is None:
-            await websocket.send_json(BaseResponse(code=404, msg=f"未找到知识库 {knowledge_base_name}").dict())
-            await websocket.close()
-            return
+        query, history = input_json["query"], input_json["history"]
         history = [History.from_data(h) for h in history]
 
         await websocket.send_json({"query": query, "turn": turn, "flag": "start"})
-        callback = AsyncIteratorCallbackHandler()
-        model_name = LLM_MODELS[0]
-        max_tokens = None
-        temperature = TEMPERATURE
-        model = get_ChatOpenAI(
-            model_name=model_name,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            callbacks=[callback],
-        )
 
-        top_k = VECTOR_SEARCH_TOP_K
-        score_threshold = SCORE_THRESHOLD
-        docs = search_docs(query, knowledge_base_name, top_k, score_threshold)
-
-        if len(docs) == 0: ## 如果没有找到相关文档，使用Empty模板
-            await websocket.send_text("")
-            await websocket.send_json({"query": query, "turn": turn, "flag": "none"})
-            continue
-
-        doc_path = get_doc_path(knowledge_base_name)
-        source_documents = []
-        for inum, doc in enumerate(docs):
-            filename = Path(doc.metadata["source"]).resolve().relative_to(doc_path)
-            parameters = urlencode({"knowledge_base_name": knowledge_base_name, "file_name":filename})
-            url = f"knowledge_base/download_doc?" + parameters
-            text = f"""出处 [{inum + 1}] [{filename}]({url}) \n\n{doc.page_content}\n\n"""
-            source_documents.append(text)
-
-
-        # first_answer = docs[0].page_content
-        # if first_answer.find('question:') > -1 and first_answer.find('answer:') > -1:
-        #     strs = first_answer[first_answer.find('answer:')+7:]
-        #     for i in range(0, len(strs), 3):
-        #         print(strs[i:i + 3])
-        #         await websocket.send_text("".join(strs[i:i + 3]))
-        #         time.sleep(0.2)
-        #     await websocket.send_text("")
-        #     await websocket.send_json(
-        #         json.dumps({"query": query, "turn": turn, "flag": "qa", "docs": source_documents}, ensure_ascii=False))
-        #     continue
-
-        context = "\n".join([doc.page_content for doc in docs])
-        prompt_name = "default"
-        prompt_template = get_prompt_template("knowledge_base_chat", prompt_name)
-        input_msg = History(role="user", content=prompt_template).to_msg_template(False)
-        chat_prompt = ChatPromptTemplate.from_messages(
-            [i.to_msg_template() for i in history] + [input_msg])
-
-        chain = LLMChain(prompt=chat_prompt, llm=model)
-
-        task = asyncio.create_task(wrap_done(
-            chain.acall({"context": context, "question": query}),
-            callback.done),
-        )
-        async for token in callback.aiter():
+        async for token in LLM(query, prompt_name= "default",  history = history):
             await websocket.send_text(token)
         await websocket.send_text("")
         await websocket.send_json(
-            json.dumps({"query": query, "turn": turn, "flag": "end", "docs": source_documents}, ensure_ascii=False))
+            json.dumps({"query": query, "turn": turn, "flag": "end"}, ensure_ascii=False))
+        await websocket.close()
+        return
 
